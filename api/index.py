@@ -192,20 +192,7 @@ def get_upi_info(vpa):
         return {"status": "error", "message": str(e)}
 
 # =====================================================================
-# SEND RESPONSE HELPER
-# =====================================================================
-
-def send_response(self, status_code, data):
-    body = json.dumps(data, indent=2).encode()
-    self.send_response(status_code)
-    self.send_header("Content-Type", "application/json")
-    self.send_header("Content-Length", str(len(body)))
-    self.send_header("Access-Control-Allow-Origin", "*")
-    self.end_headers()
-    self.wfile.write(body)
-
-# =====================================================================
-# MAIN HANDLER
+# MAIN HANDLER - VERCEL COMPATIBLE
 # =====================================================================
 
 class handler(BaseHTTPRequestHandler):
@@ -214,9 +201,9 @@ class handler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         path = parsed.path.strip("/")
         
-        # যদি path খালি হয়
-        if not path:
-            send_response(self, 200, {
+        # ===== HOME / ROOT =====
+        if not path or path == "":
+            self._send_response(200, {
                 "service": "MR SHREY API Gateway",
                 "developer": "MR SHREY",
                 "channel": "https://t.me/MR_SHREY3",
@@ -230,25 +217,22 @@ class handler(BaseHTTPRequestHandler):
             })
             return
         
-        # পাথ ভাগ করা
         parts = path.split("/")
         
-        # =============================================================
-        # KEY INFO
-        # =============================================================
-        if len(parts) == 2 and parts[0] == "keyinfo":
+        # ===== KEY INFO =====
+        if len(parts) >= 2 and parts[0] == "keyinfo":
             api_key = parts[1]
             key_info = get_key_info(api_key)
             
             if key_info:
-                send_response(self, 200, {
+                self._send_response(200, {
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
                     "key_info": key_info
                 })
             else:
-                send_response(self, 404, {
+                self._send_response(404, {
                     "status": "error",
                     "message": "Invalid API Key!",
                     "developer": "MR SHREY",
@@ -256,15 +240,13 @@ class handler(BaseHTTPRequestHandler):
                 })
             return
         
-        # =============================================================
-        # VEHICLE91 - FREE
-        # =============================================================
-        if len(parts) == 2 and parts[0] == "vehicle91":
+        # ===== VEHICLE91 - FREE =====
+        if len(parts) >= 2 and parts[0] == "vehicle91":
             query = parts[1]
             reg_clean = query.strip().upper().replace(" ", "").replace("-", "")
             
             if not re.match(r'^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$', reg_clean):
-                send_response(self, 400, {
+                self._send_response(400, {
                     "status": "error",
                     "message": "Invalid format. Example: MH12AB1234",
                     "developer": "MR SHREY",
@@ -275,7 +257,7 @@ class handler(BaseHTTPRequestHandler):
             raw_data = get_91wheels_data(reg_clean)
             
             if raw_data.get('status') == 'error':
-                send_response(self, 500, {
+                self._send_response(500, {
                     "status": "error",
                     "message": raw_data.get('message', 'Failed to fetch vehicle data'),
                     "developer": "MR SHREY",
@@ -286,16 +268,14 @@ class handler(BaseHTTPRequestHandler):
             parsed = parse_91wheels_data(raw_data)
             parsed["developer"] = "MR SHREY"
             parsed["channel"] = "https://t.me/MR_SHREY3"
-            send_response(self, 200, parsed)
+            self._send_response(200, parsed)
             return
         
-        # =============================================================
-        # ALL OTHER APIS - REQUIRE API KEY
-        # =============================================================
+        # ===== ALL OTHER APIS - REQUIRE API KEY =====
         api_key = params.get('api_key', [None])[0]
         
         if not api_key:
-            send_response(self, 200, {
+            self._send_response(200, {
                 "status": "error",
                 "message": "❌ API Key Required!",
                 "developer": "MR SHREY",
@@ -312,7 +292,7 @@ class handler(BaseHTTPRequestHandler):
         key_data, error = validate_api_key(api_key)
         
         if not key_data:
-            send_response(self, 403, {
+            self._send_response(403, {
                 "status": "error",
                 "message": error,
                 "developer": "MR SHREY",
@@ -320,10 +300,8 @@ class handler(BaseHTTPRequestHandler):
             })
             return
         
-        # =============================================================
-        # PAN INFO
-        # =============================================================
-        if len(parts) == 2 and parts[0] == "pan":
+        # ===== PAN INFO =====
+        if len(parts) >= 2 and parts[0] == "pan":
             query = parts[1]
             try:
                 url = f"https://turtlemintloans.com/api/minterprise/v1/products/personal-loan/leads/existing-lead-by-pan?pan={query}"
@@ -336,18 +314,17 @@ class handler(BaseHTTPRequestHandler):
                 r = requests.get(url, headers=headers, timeout=15)
                 data = r.json()
                 key_data["used_today"] += 1
-                key_info = get_key_info(api_key)
                 
-                send_response(self, 200, {
+                self._send_response(200, {
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
-                    "key_info": key_info,
+                    "key_info": get_key_info(api_key),
                     "data": data.get("data", {}),
                     "meta": data.get("meta", {})
                 })
             except Exception as e:
-                send_response(self, 500, {
+                self._send_response(500, {
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
@@ -355,26 +332,23 @@ class handler(BaseHTTPRequestHandler):
                 })
             return
         
-        # =============================================================
-        # NUMBER INFO
-        # =============================================================
-        if len(parts) == 2 and parts[0] == "number":
+        # ===== NUMBER INFO =====
+        if len(parts) >= 2 and parts[0] == "number":
             query = parts[1]
             try:
                 r = requests.get(f"https://rootx-osint.in/?type=num&key=seed_bhai&query={query}", timeout=15)
                 data = r.json()
                 key_data["used_today"] += 1
-                key_info = get_key_info(api_key)
                 
-                send_response(self, 200, {
+                self._send_response(200, {
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
-                    "key_info": key_info,
+                    "key_info": get_key_info(api_key),
                     "data": data
                 })
             except Exception as e:
-                send_response(self, 500, {
+                self._send_response(500, {
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
@@ -382,25 +356,22 @@ class handler(BaseHTTPRequestHandler):
                 })
             return
         
-        # =============================================================
-        # UPI INFO
-        # =============================================================
-        if len(parts) == 2 and parts[0] == "upi":
+        # ===== UPI INFO =====
+        if len(parts) >= 2 and parts[0] == "upi":
             query = parts[1]
             try:
                 data = get_upi_info(query)
                 key_data["used_today"] += 1
-                key_info = get_key_info(api_key)
                 
-                send_response(self, 200, {
+                self._send_response(200, {
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
-                    "key_info": key_info,
+                    "key_info": get_key_info(api_key),
                     "data": data
                 })
             except Exception as e:
-                send_response(self, 500, {
+                self._send_response(500, {
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
@@ -408,10 +379,8 @@ class handler(BaseHTTPRequestHandler):
                 })
             return
         
-        # =============================================================
-        # 404 - NOT FOUND
-        # =============================================================
-        send_response(self, 404, {
+        # ===== 404 =====
+        self._send_response(404, {
             "status": "error",
             "message": "Endpoint not found",
             "developer": "MR SHREY",
@@ -424,3 +393,12 @@ class handler(BaseHTTPRequestHandler):
                 "/keyinfo/<api_key>"
             ]
         })
+    
+    def _send_response(self, status_code, data):
+        body = json.dumps(data, indent=2).encode()
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
