@@ -1,9 +1,7 @@
-from http.server import BaseHTTPRequestHandler
-import requests
 import json
+import requests
 import re
 import uuid
-import random
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
@@ -15,9 +13,7 @@ API_KEYS = {
     "MR_SHREY_MONTHLY_001": {
         "key": "MR_SHREY_MONTHLY_001",
         "plan": "1 Month",
-        "days": 30,
         "daily_limit": 1000,
-        "created": "2026-08-13",
         "expiry": "2026-09-13",
         "used_today": 0,
         "last_reset": "2026-08-13"
@@ -25,9 +21,7 @@ API_KEYS = {
     "MR_SHREY_2MONTH_001": {
         "key": "MR_SHREY_2MONTH_001",
         "plan": "2 Months",
-        "days": 60,
         "daily_limit": 2000,
-        "created": "2026-08-13",
         "expiry": "2026-10-13",
         "used_today": 0,
         "last_reset": "2026-08-13"
@@ -35,9 +29,7 @@ API_KEYS = {
     "MR_SHREY_3MONTH_001": {
         "key": "MR_SHREY_3MONTH_001",
         "plan": "3 Months",
-        "days": 90,
         "daily_limit": 3000,
-        "created": "2026-08-13",
         "expiry": "2026-11-13",
         "used_today": 0,
         "last_reset": "2026-08-13"
@@ -45,9 +37,7 @@ API_KEYS = {
     "MR_SHREY_MASTER_001": {
         "key": "MR_SHREY_MASTER_001",
         "plan": "Master (1 Year)",
-        "days": 365,
         "daily_limit": 10000,
-        "created": "2026-08-13",
         "expiry": "2027-08-13",
         "used_today": 0,
         "last_reset": "2026-08-13"
@@ -60,13 +50,13 @@ API_KEYS = {
 
 def validate_api_key(api_key):
     if api_key not in API_KEYS:
-        return None, "❌ Invalid API Key!"
+        return None, "Invalid API Key!"
     
     key_data = API_KEYS[api_key]
     expiry_date = datetime.strptime(key_data["expiry"], "%Y-%m-%d")
     
     if datetime.now() > expiry_date:
-        return None, "❌ API Key Expired!"
+        return None, "API Key Expired!"
     
     today = datetime.now().strftime("%Y-%m-%d")
     if key_data["last_reset"] != today:
@@ -74,7 +64,7 @@ def validate_api_key(api_key):
         key_data["last_reset"] = today
     
     if key_data["used_today"] >= key_data["daily_limit"]:
-        return None, f"❌ Daily Limit Reached! (0/{key_data['daily_limit']} remaining)"
+        return None, f"Daily Limit Reached! (0/{key_data['daily_limit']} remaining)"
     
     return key_data, None
 
@@ -192,18 +182,34 @@ def get_upi_info(vpa):
         return {"status": "error", "message": str(e)}
 
 # =====================================================================
-# MAIN HANDLER - VERCEL COMPATIBLE
+# VERCEL HANDLER
 # =====================================================================
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        params = parse_qs(parsed.query)
-        path = parsed.path.strip("/")
-        
-        # ===== HOME / ROOT =====
-        if not path or path == "":
-            self._send_response(200, {
+def handler(request, context):
+    """Vercel Serverless Function Handler"""
+    
+    # GET প্যারামিটার পার্স করা
+    path = request.path or ""
+    query_string = request.query_string or ""
+    params = {}
+    
+    if query_string:
+        parsed = parse_qs(query_string)
+        params = {k: v[0] for k, v in parsed.items()}
+    
+    # পাথ ভাগ করা
+    path = path.strip("/")
+    parts = path.split("/") if path else []
+    
+    # ===== HOME / ROOT =====
+    if not path or path == "":
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "service": "MR SHREY API Gateway",
                 "developer": "MR SHREY",
                 "channel": "https://t.me/MR_SHREY3",
@@ -214,70 +220,106 @@ class handler(BaseHTTPRequestHandler):
                     "/upi/<vpa>": "Requires API Key",
                     "/keyinfo/<api_key>": "Check API Key details"
                 }
-            })
-            return
+            }, indent=2)
+        }
+    
+    # ===== KEY INFO =====
+    if len(parts) >= 2 and parts[0] == "keyinfo":
+        api_key = parts[1]
+        key_info = get_key_info(api_key)
         
-        parts = path.split("/")
-        
-        # ===== KEY INFO =====
-        if len(parts) >= 2 and parts[0] == "keyinfo":
-            api_key = parts[1]
-            key_info = get_key_info(api_key)
-            
-            if key_info:
-                self._send_response(200, {
+        if key_info:
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
                     "key_info": key_info
-                })
-            else:
-                self._send_response(404, {
+                }, indent=2)
+            }
+        else:
+            return {
+                "statusCode": 404,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": "Invalid API Key!",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-            return
+                }, indent=2)
+            }
+    
+    # ===== VEHICLE91 - FREE =====
+    if len(parts) >= 2 and parts[0] == "vehicle91":
+        query = parts[1]
+        reg_clean = query.strip().upper().replace(" ", "").replace("-", "")
         
-        # ===== VEHICLE91 - FREE =====
-        if len(parts) >= 2 and parts[0] == "vehicle91":
-            query = parts[1]
-            reg_clean = query.strip().upper().replace(" ", "").replace("-", "")
-            
-            if not re.match(r'^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$', reg_clean):
-                self._send_response(400, {
+        if not re.match(r'^[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{1,4}$', reg_clean):
+            return {
+                "statusCode": 400,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": "Invalid format. Example: MH12AB1234",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-                return
-            
-            raw_data = get_91wheels_data(reg_clean)
-            
-            if raw_data.get('status') == 'error':
-                self._send_response(500, {
+                }, indent=2)
+            }
+        
+        raw_data = get_91wheels_data(reg_clean)
+        
+        if raw_data.get('status') == 'error':
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": raw_data.get('message', 'Failed to fetch vehicle data'),
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-                return
-            
-            parsed = parse_91wheels_data(raw_data)
-            parsed["developer"] = "MR SHREY"
-            parsed["channel"] = "https://t.me/MR_SHREY3"
-            self._send_response(200, parsed)
-            return
+                }, indent=2)
+            }
         
-        # ===== ALL OTHER APIS - REQUIRE API KEY =====
-        api_key = params.get('api_key', [None])[0]
+        parsed = parse_91wheels_data(raw_data)
+        parsed["developer"] = "MR SHREY"
+        parsed["channel"] = "https://t.me/MR_SHREY3"
         
-        if not api_key:
-            self._send_response(200, {
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps(parsed, indent=2)
+        }
+    
+    # ===== ALL OTHER APIS - REQUIRE API KEY =====
+    api_key = params.get('api_key')
+    
+    if not api_key:
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "status": "error",
-                "message": "❌ API Key Required!",
+                "message": "API Key Required!",
                 "developer": "MR SHREY",
                 "channel": "https://t.me/MR_SHREY3",
                 "available_plans": {
@@ -286,101 +328,152 @@ class handler(BaseHTTPRequestHandler):
                     "3 Months": {"key": "MR_SHREY_3MONTH_001", "daily_limit": 3000},
                     "Master (1 Year)": {"key": "MR_SHREY_MASTER_001", "daily_limit": 10000}
                 }
-            })
-            return
-        
-        key_data, error = validate_api_key(api_key)
-        
-        if not key_data:
-            self._send_response(403, {
+            }, indent=2)
+        }
+    
+    key_data, error = validate_api_key(api_key)
+    
+    if not key_data:
+        return {
+            "statusCode": 403,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps({
                 "status": "error",
                 "message": error,
                 "developer": "MR SHREY",
                 "channel": "https://t.me/MR_SHREY3"
-            })
-            return
-        
-        # ===== PAN INFO =====
-        if len(parts) >= 2 and parts[0] == "pan":
-            query = parts[1]
-            try:
-                url = f"https://turtlemintloans.com/api/minterprise/v1/products/personal-loan/leads/existing-lead-by-pan?pan={query}"
-                headers = {
-                    "x-broker": "turtlemint",
-                    "authorization": "Bearer f13517d5a59b689d16aa30c528ccaf7801f823b0f5548f65d6d3793270cfe8d628cea877289aba166e5425c31cfc7a0b",
-                    "x-provider": "signzy",
-                    "content-type": "application/json"
-                }
-                r = requests.get(url, headers=headers, timeout=15)
-                data = r.json()
-                key_data["used_today"] += 1
-                
-                self._send_response(200, {
+            }, indent=2)
+        }
+    
+    # ===== PAN INFO =====
+    if len(parts) >= 2 and parts[0] == "pan":
+        query = parts[1]
+        try:
+            url = f"https://turtlemintloans.com/api/minterprise/v1/products/personal-loan/leads/existing-lead-by-pan?pan={query}"
+            headers = {
+                "x-broker": "turtlemint",
+                "authorization": "Bearer f13517d5a59b689d16aa30c528ccaf7801f823b0f5548f65d6d3793270cfe8d628cea877289aba166e5425c31cfc7a0b",
+                "x-provider": "signzy",
+                "content-type": "application/json"
+            }
+            r = requests.get(url, headers=headers, timeout=15)
+            data = r.json()
+            key_data["used_today"] += 1
+            
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
                     "key_info": get_key_info(api_key),
                     "data": data.get("data", {}),
                     "meta": data.get("meta", {})
-                })
-            except Exception as e:
-                self._send_response(500, {
+                }, indent=2)
+            }
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-            return
-        
-        # ===== NUMBER INFO =====
-        if len(parts) >= 2 and parts[0] == "number":
-            query = parts[1]
-            try:
-                r = requests.get(f"https://rootx-osint.in/?type=num&key=seed_bhai&query={query}", timeout=15)
-                data = r.json()
-                key_data["used_today"] += 1
-                
-                self._send_response(200, {
+                }, indent=2)
+            }
+    
+    # ===== NUMBER INFO =====
+    if len(parts) >= 2 and parts[0] == "number":
+        query = parts[1]
+        try:
+            r = requests.get(f"https://rootx-osint.in/?type=num&key=seed_bhai&query={query}", timeout=15)
+            data = r.json()
+            key_data["used_today"] += 1
+            
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
                     "key_info": get_key_info(api_key),
                     "data": data
-                })
-            except Exception as e:
-                self._send_response(500, {
+                }, indent=2)
+            }
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-            return
-        
-        # ===== UPI INFO =====
-        if len(parts) >= 2 and parts[0] == "upi":
-            query = parts[1]
-            try:
-                data = get_upi_info(query)
-                key_data["used_today"] += 1
-                
-                self._send_response(200, {
+                }, indent=2)
+            }
+    
+    # ===== UPI INFO =====
+    if len(parts) >= 2 and parts[0] == "upi":
+        query = parts[1]
+        try:
+            data = get_upi_info(query)
+            key_data["used_today"] += 1
+            
+            return {
+                "statusCode": 200,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "success",
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3",
                     "key_info": get_key_info(api_key),
                     "data": data
-                })
-            except Exception as e:
-                self._send_response(500, {
+                }, indent=2)
+            }
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*"
+                },
+                "body": json.dumps({
                     "status": "error",
                     "message": str(e),
                     "developer": "MR SHREY",
                     "channel": "https://t.me/MR_SHREY3"
-                })
-            return
-        
-        # ===== 404 =====
-        self._send_response(404, {
+                }, indent=2)
+            }
+    
+    # ===== 404 =====
+    return {
+        "statusCode": 404,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+        },
+        "body": json.dumps({
             "status": "error",
             "message": "Endpoint not found",
             "developer": "MR SHREY",
@@ -392,13 +485,5 @@ class handler(BaseHTTPRequestHandler):
                 "/upi/<vpa>?api_key=YOUR_KEY",
                 "/keyinfo/<api_key>"
             ]
-        })
-    
-    def _send_response(self, status_code, data):
-        body = json.dumps(data, indent=2).encode()
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        }, indent=2)
+    }
