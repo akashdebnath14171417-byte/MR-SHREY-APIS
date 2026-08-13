@@ -3,7 +3,6 @@ import requests
 import re
 import uuid
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs
 
 # =====================================================================
 # API KEY SYSTEM - MR SHREY
@@ -194,8 +193,10 @@ def handler(request, context):
     params = {}
     
     if query_string:
-        parsed = parse_qs(query_string)
-        params = {k: v[0] for k, v in parsed.items()}
+        for item in query_string.split("&"):
+            if "=" in item:
+                key, val = item.split("=", 1)
+                params[key] = val
     
     # পাথ ভাগ করা
     path = path.strip("/")
