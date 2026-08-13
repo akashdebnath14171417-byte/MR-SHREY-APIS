@@ -187,7 +187,6 @@ def get_upi_info(vpa):
 def handler(request, context):
     """Vercel Serverless Function Handler"""
     
-    # GET প্যারামিটার পার্স করা
     path = request.path or ""
     query_string = request.query_string or ""
     params = {}
@@ -198,7 +197,6 @@ def handler(request, context):
                 key, val = item.split("=", 1)
                 params[key] = val
     
-    # পাথ ভাগ করা
     path = path.strip("/")
     parts = path.split("/") if path else []
     
